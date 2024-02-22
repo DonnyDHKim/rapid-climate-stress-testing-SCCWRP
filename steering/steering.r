@@ -35,7 +35,9 @@
 library(tidyverse)
 
 # Set working directory
-setwd('C:/Workspace/rapid-climate-stress-testing-SCCWRP/steering/'); getwd();
+#setwd('C:/Workspace/rapid-climate-stress-testing-SCCWRP/steering/'); getwd();
+setwd('G:/RB9/rapid-climate-stress-testing-SCCWRP/steering'); getwd();
+#setwd('/mnt/g/RB9/rapid-climate-stress-testing-SCCWRP/steering'); getwd();
 
 # Source the functions
 source('../R/utils.R')
@@ -44,10 +46,13 @@ source('../R/utils.R')
 
 
 # Creating inputs from RFpredictors format compiled by SCCWRP (RB9)
-RFpredictor_df <- read.csv('../RF_predictor/2022-03-28_RF_predictors_RB9_COMIDS.csv')[,1:45] # we only need column 1 to 45.
-comid_list <- (RFpredictor_df %>% distinct(comid))$comid[1:10] # Trying on 5 comids for test purpose
+#RFpredictor_df <- read.csv('../RF_predictor/2022-03-28_RF_predictors_RB9_COMIDS.csv')[,1:45] # we only need column 1 to 45.
+RFpredictor_df <- read.csv('../RF_predictor/NHD_COMIDs_RB9_SD_comid_predictor_data.csv')[,1:45] # we only need column 1 to 45.
+colnames(RFpredictor_df) <- tolower(colnames(RFpredictor_df))
 
-RCST_inputs_from_compiled_RFpredictors(RFpredictor_df, comid_list) # Run it. Ignore the dir.create warning.# In testing stage, I limited it to only 5 COMIDS.
+RB9_comid_list <- (RFpredictor_df %>% distinct(comid))$comid#[1:10] # Trying on 5 comids for test purpose
+
+RCST_inputs_from_compiled_RFpredictors(RFpredictor_df, RB9_comid_list) # Run it. Ignore the dir.create warning.# In testing stage, I limited it to only 5 COMIDS.
 
 
 # Creating inputs from raw RFpredictors format created by Ted Grantham
@@ -55,11 +60,11 @@ RCST_inputs_from_compiled_RFpredictors(RFpredictor_df, comid_list) # Run it. Ign
 # Because climate data files are scattered in different csv files, unlike SCCWRP compiled version of predictor inputs, we need to do this in loop.
 
 dir.create('../hist_raw') # As function will be looping around multiple files, it is better to create directory once here.
-
 comid_list_raw_FULL <- list.files(path = '../CA_All_COMID_descriptors_Ted/', full.names = F, recursive = T, ignore.case = TRUE) %>% 
-  sub(pattern = "(.*)\\..*$", replacement = "\\1")
+  sub(pattern = "(.*)\\..*$", replacement = "\\1") %>% as.array() %>% as.integer()
 
-comid_list_raw <- comid_list_raw_FULL[1:10] # Subsetting 10 comids for test purpose.
+comid_list_raw_RB9 <- intersect(comid_list_raw_FULL, RB9_comid_list)   # Subsetting 10 comids for test purpose.
+comid_list<- comid_list_raw_FULL %>% as.list(as.numeric()) # Subsetting 10 comids for test purpose.
 write.csv(comid_list_raw, paste0('../hist_raw/comid_list_raw.csv'),  row.names = FALSE, quote=FALSE, col.names = FALSE) # Save the list of comids
 
 # Loop it.
@@ -121,15 +126,20 @@ for (i in 1:length(comid_list_raw)){
 
 
 # Start by setting and checking working directory
-setwd('C:/Workspace/rapid-climate-stress-testing-SCCWRP/steering/'); getwd();
-library(processx); library(tictoc);
+#setwd('C:/Workspace/rapid-climate-stress-testing-SCCWRP/steering/'); getwd();
+setwd('G:/RB9/rapid-climate-stress-testing-SCCWRP/steering'); getwd();
+#setwd('/mnt/g/RB9/rapid-climate-stress-testing-SCCWRP/steering'); getwd();
+
+library(processx);
+library(tictoc);
 
 
 # SNIPPET: example to show the basic method calling Octave script through processx package.
 # Possibly DON'T run, unless want to check out how it works for the first time.
 {
   output <- character(0)
-  proc <- processx::process$new("Octave", c("./run_wrapper.m", "comid_10000042", "hist_raw", 2), stdout = "|")
+  proc <- processx::process$new("octave", c("./run_wrapper.m", "comid_10000042", "hist_raw", 2), stdout = "|")
+  processx::run("octave", c("./run_wrapper.m", "comid_10000042", "hist_raw", 2), stdout = "|")  
 
   # Real-time message from Octave
   while (proc$is_alive()) {
@@ -144,6 +154,7 @@ library(processx); library(tictoc);
   }
   rm(now, tmstmp, thisout, output)
 }
+
 # In real runs, we are using "processx::run" instead of "processx::process$new" to avoid dropping bomb to the system:
 # e.g.: processx::run("Octave", c("./run_wrapper.m", "comid_10000042", "hist_raw", 2), stdout = "|")
 
@@ -159,14 +170,20 @@ source('../R/Call_RCST_Octave_Scripts.R')
 library(parallel); library(doParallel); library(foreach);
 
 # Make cluster and register it.
-cl <- parallel::makeCluster(detectCores()/2) # don't set makeCluster(n) too high on laptops.
+#cl <- parallel::makeCluster(detectCores()/2) # don't set makeCluster(n) too high on laptops.
+cl <- parallel::makeCluster(32) # don't set makeCluster(n) too high on laptops.
 # When using powerful computer, it is OK to set it as high as "detectCores() - 2"
 registerDoParallel(cl)
 
 # Run the loop in parallel using foreach
-foreach(i = seq_along(comid_list_raw), .combine = 'c') %dopar% {
-  Call_RCST_Octave_Scripts(comid_list_raw[i], "hist_raw", 2) # When running with climate input generated from Ted's RFpredictor
+comid_list = RB9_comid_list[97:2116] #1:529, 530:1059, 1060:1587, 1588:2116
+
+tic()
+foreach(i = seq_along(comid_list), .combine = 'c') %dopar% {
+  Call_RCST_Octave_Scripts(comid_list[i], "hist", 2) # When running with climate input generated from Ted's RFpredictor
+  log_message(paste("Processed item:", i))
 }
+toc()
 
 parallel::stopCluster(cl) # Important to do this.
 
@@ -176,6 +193,67 @@ foreach(i = seq_along(comid_list), .combine = 'c') %dopar% {
   Call_RCST_Octave_Scripts(comid_list[i], "hist", 2) # When running with climate input generated from SCCWRP compiled RFpredictor
 }
 ### Step 3 end==================================================================
+# Chat-GPT suggested optimization
+library(future); library(tictoc);
+comid_list = RB9_comid_list[97:2116] #1:529, 530:1059, 1060:1587, 1588:2116
+
+
+{
+  # Plan for using multiple background R sessions
+  plan(future::multisession, workers = 32)
+  
+  # Function to process a single comid
+  process_comid <- function(comid) {
+    result <- Call_RCST_Octave_Scripts(comid, "hist", 2)
+    log_message(paste("Processed item:", comid))
+    return(result)
+  }
+  
+  tic()
+  
+  # Create a list of futures for each comid
+  futures <- vector("list", length(comid_list))
+  for (i in seq_along(comid_list)) {
+    futures[[i]] <- future(process_comid(comid_list[i]))
+  }
+  
+  # Wait for the tasks to complete
+  values <- lapply(futures, value)
+  
+  toc()
+}
 
 
 
+
+
+
+
+
+
+### Step 4: Verify comids
+comid_list_out <- list.dirs(path = '../out/', full.names = F, recursive = T) 
+comid_list_out <- comid_list_out[!grepl(paste(c("/"), collapse = "|"), comid_list_out)] 
+comid_list_out <- gsub(".*_(\\d+)$", "\\1", comid_list_out)
+missing_out <- RB9_comid_list[!(RB9_comid_list %in% comid_list_out)] %>% as.numeric()
+
+{
+  output <- character(0)
+  proc <- processx::process$new("octave", c("./run_wrapper.m", paste0("comid_", missing_out), "hist", 2), stdout = "|")
+
+  # Real-time message from Octave
+  while (proc$is_alive()) {
+    Sys.sleep(1)
+    now <- Sys.time()
+    tmstmp <- sprintf("# [%s]", format(now, format = "%T"))
+    thisout <- proc$read_output_lines()
+    if (length(thisout)) {
+      output <- c(output, thisout)
+      message(tmstmp, " Msg from Ocatve:\n", paste0("#> ", thisout), "  ")
+    }
+  }
+  rm(now, tmstmp, thisout, output)
+}
+
+#%>% 
+  sub(pattern = "(.*)\\..*$", replacement = "\\1") #%>% as.array() %>% as.integer()

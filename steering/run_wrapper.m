@@ -12,15 +12,37 @@
 
 
 function run_wrapper(arg = argv())
+	
+	%% Get the full path to the currently executing .m file
+	%scriptFilePath = mfilename('fullpath');
+	%
+	%% Extract the directory part of the file path
+	%scriptDir = fileparts(scriptFilePath);
+	%
+	%% Change the current working directory to the directory of the .m file
+	%cd(scriptDir);
+
+	% Define the directory separator based on the platform
+	if ispc()  % Check if running on Windows
+		separator = '\';  % Windows uses backward slashes
+	else
+		separator = '/';  % Linux and macOS use forward slashes
+	end
+
+	% Create the directory using the platform-specific separator
+	%mkdir(['..', separator, 'out', separator, comid]);
+
 
 	% Initializing...
 	comid_arg = arg{1};
 	comid = char(comid_arg); % Just in case
-	mkdir('..\out\', comid);
+	%mkdir('..\out\', comid);
+	mkdir(['..', separator, 'out', separator, comid]);
 
 	% Saving the log of messages
 	N = datestr(now(), 'yyyymmdd_HHMM');
-	dfile = ['..\out\', comid, '\', N, '_log.txt'];
+	%dfile = ['..\out\', comid, '\', N, '_log.txt'];
+	dfile = ['..', separator, 'out', separator, comid, separator, N, '_log.txt'];
 	diary (dfile)
 	
 	% Conditional statement to read in additional arguments
@@ -46,18 +68,22 @@ function run_wrapper(arg = argv())
 	tic;
 	% add path to directories with framework code
 	% Equivalent to 'sourcing' functions in R
-	addpath('..\framework\');
+	%addpath('..\framework\');
+	addpath(['..', separator, 'framework', separator]);
 	isOctave = exist('OCTAVE_VERSION', 'builtin') ~= 0; % check if we are in Octave
 	
 	% Loading some customized function that is essential to run the RCST scripts in GNU Octave environment
-	if isOctave, addpath(genpath('..\framework\octave\')); pkg load statistics; %pkg load tablicious;
+	%if isOctave, addpath(genpath('..\framework\octave\')); pkg load statistics; %pkg load tablicious;
+	if isOctave, addpath(genpath(['..', separator, 'framework', separator, 'octave', separator])); pkg load statistics; %pkg load tablicious;
 	end
 
 	% importing input climatic hist data.
 	% * Weirdly, "readtable" is custom function made by Fowler et al., and it cannot read csv file if it has a column name that only consist of numbers.
 	% * This is the reason why using input argument such as "comid_20332660" instead of simply doing "20332660".
-	precip_monthly = readtable(['..\', input_dir_arg, '\precip_monthly_', comid(7:end), '.csv']); % comid(7:end) extracts actual comid (e.g. 20332660) from into argument string such as "comid_20332660"
-	T_monthly = readtable(['..\', input_dir_arg, '\T_monthly_', comid(7:end), '.csv']);
+	%precip_monthly = readtable(['..\', input_dir_arg, '\precip_monthly_', comid(7:end), '.csv']); % comid(7:end) extracts actual comid (e.g. 20332660) from into argument string such as "comid_20332660"
+	precip_monthly = readtable(['..', separator, input_dir_arg, separator, 'precip_monthly_', comid(7:end), '.csv']); % comid(7:end) extracts actual comid (e.g. 20332660) from into argument string such as "comid_20332660"
+	%T_monthly = readtable(['..\', input_dir_arg, '\T_monthly_', comid(7:end), '.csv']);
+	T_monthly = readtable(['..', separator, input_dir_arg, separator, 'T_monthly_', comid(7:end), '.csv']);
 	%PET_monthly = readtable('hist\PET_monthly.csv'); % DK: modified framework is capable of handling PET input. It is optional input at this time.
 
 
@@ -141,10 +167,13 @@ function run_wrapper(arg = argv())
 	%deltaSeasonality_space = [-0.06 -0.03 0.00 +0.03 +0.06 +0.09 +0.12 +0.15];                % changes in seasonality %0
 	%deltaRRrship_space     = [-50 -43.75 -37.5 -31.25 -25 -18.75 -12.5 -6.25 0 6.25 12.5];    % shift in rainfall runoff relationship
 	%deltaRRrship_space = [];
-	deltaP_space           = [-0.10 -0.05 0 .05 .10];
-	deltaT_space           = [0 0.5 1.0 1.5 2.0];
+	deltaP_space           = [-0.20 -0.10 0 .10 .20];
+	%deltaT_space           = [0 0.5 1.0 1.5 2.0]; 	% 1st attempt
+	deltaT_space           = [0 1.0 2.0]; 	%testing
 	deltaLowFreqP_space    = [0];               % changes n Hurst Coefficient %0
-	deltaSeasonality_space = [0];                % changes in seasonality %0
+	%deltaSeasonality_space = [0];                % changes in seasonality %0
+	deltaSeasonality_space = [-0.1 -0.05 0];      % testing negative values denoting increase in rainfall during "cold season"
+
 
 
 	%%% DK: Main stochastic time-series generation & perturbation loop
@@ -158,8 +187,8 @@ function run_wrapper(arg = argv())
 				for deltaSeasonality = deltaSeasonality_space
 					
 					% DK:DesiredNumberOfTestRuns and using rand() is an odd way to random sample in a case where stress testing space is really huge (like over 10^3). 
-					DesiredNumberOfTestRuns = 25; % DK: However, we will be using small stress testing space, so just match this number to stress testing space numbers to get full results.
-					if rand() < (DesiredNumberOfTestRuns / (5*5*1*1))
+					DesiredNumberOfTestRuns = 45; % DK: However, we will be using small stress testing space, so just match this number to stress testing space numbers to get full results.
+					if rand() < (DesiredNumberOfTestRuns / (5*3*1*3))
 					
 						% Update index k
 						k = k+1;
@@ -196,9 +225,20 @@ function run_wrapper(arg = argv())
 	perturbations_save = vertcat({'Index', 'deltaP', 'deltaT', 'deltaLowFreqP', 'deltaSeasonality'}, perturbations_save);
 
 	% Save to CSV files
-	cell2csv (['..\out\', comid ,'\TS_P.csv'], TS_P_save);
-	cell2csv (['..\out\', comid ,'\TS_T.csv'], TS_T_save);
-	cell2csv (['..\out\', comid ,'\perturbations_save.csv'], perturbations_save);
+	%cell2csv (['..\out\', comid ,'\TS_P.csv'], TS_P_save);
+	%cell2csv (['..\out\', comid ,'\TS_T.csv'], TS_T_save);
+	%cell2csv (['..\out\', comid ,'\perturbations_save.csv'], perturbations_save);
+	
+		% Define the directory separator based on the platform
+	if ispc()  % Check if running on Windows
+		separator = '\';  % Windows uses backward slashes
+	else
+		separator = '/';  % Linux and macOS use forward slashes
+	end
+	
+	cell2csv (['..', separator, 'out' separator, comid , separator, 'TS_P.csv'], TS_P_save);
+	cell2csv (['..', separator, 'out' separator, comid , separator, 'TS_T.csv'], TS_T_save);
+	cell2csv (['..', separator, 'out' separator, comid , separator, 'perturbations_save.csv'], perturbations_save);
 
 	% To extract Low_Freq_Comp for non-perturbed stochastically generated TS. Inteded for some sort of visual inspection similar to Fig 4 (Fowler et al., 2022).
 	[~, extra] = GetStochPertData(0, 0, 0, 0, HistoricData, info);
@@ -206,7 +246,9 @@ function run_wrapper(arg = argv())
 	TS_P_ann_HighFreq = table2cell(extra.TS_P_ann_HighFreq);
 	TS_P_ann_HiLoFreq = [num2cell(1:info.pars.StochRepLen_yrs)', num2cell(extra.extra_f.years)', TS_P_ann_LowFreq, TS_P_ann_HighFreq];
 	TS_P_ann_HiLoFreq = vertcat({'Year', 'RandomizedFrom', 'LowFreq', 'HighFreq'}, TS_P_ann_HiLoFreq);
-	cell2csv (['..\out\', comid ,'\TS_HiLowFreq.csv'], TS_P_ann_HiLoFreq);
+	%cell2csv (['..\out\', comid ,'\TS_HiLowFreq.csv'], TS_P_ann_HiLoFreq);
+	cell2csv (['..', separator, 'out', separator, comid , separator,'TS_HiLowFreq.csv'], TS_P_ann_HiLoFreq);
+
 
 	timing.stochgen = toc;
 
